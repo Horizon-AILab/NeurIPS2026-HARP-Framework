@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local model weights and checkpoints
+models/
+checkpoints/
+outputs/
+*.pt
+*.pth
+*.safetensors
+
+# Local caches and logs
+.cache/
+*.log
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
