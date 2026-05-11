@@ -1,31 +1,61 @@
-# NeurIPS2026-HARP Framework
+# HARP: Hidden-State-Aware Receiver-Personalized Pruning
 
-Official implementation package for **HARP: Hidden-State-Aware Receiver-Personalized Pruning**, a communication-pruning framework for heterogeneous small-language-model multi-agent systems (SLM-MAS).
+Code and resources for **Who Should Listen to Whom? Receiver-Personalized Communication Pruning for Heterogeneous SLM-based Multi-Agent Systems**.
 
-HARP asks a practical question in collaborative SLM reasoning: **who should each receiver agent listen to?** Instead of using dense communication or a single global topology, HARP estimates the receiver-specific utility of candidate incoming messages from the receiver model's hidden states, then keeps only the most useful sources under a communication budget.
+Paper: [OpenReview](https://openreview.net/forum?id=2bxMTM1TM7)
 
-## Overview
+This repository mainly contains the implementation and experimental materials for the **Hidden-State-Aware Receiver-Personalized Pruning (HARP) framework**. The paper makes two central contributions: a communication-topology protocol for heterogeneous SLM-MASs, and HARP as a practical hidden-state-aware pruning framework built under that protocol.
 
-Heterogeneous SLM-based multi-agent systems can improve on-device reasoning by combining agents with different pretrained knowledge, context capacity, and reasoning behavior. However, dense communication is often inefficient and can even hurt performance because weaker receivers may be sensitive to redundant, noisy, or adversarial messages.
+## Two Main Contributions
 
-HARP introduces a receiver-personalized pruning pipeline:
+### 1. The first communication-topology protocol for heterogeneous SLM-MASs
 
-1. Generate candidate reasoning messages from heterogeneous SLM agents.
-2. Feed each candidate message into the target receiver model.
-3. Extract receiver-side hidden states over the candidate message span.
-4. Score the candidate edge with a lightweight HARP scorer.
-5. Keep the Top-K incoming sources for each receiver to form a sparse, query-specific communication graph.
+Heterogeneous small-language-model multi-agent systems (SLM-MASs) are not made of interchangeable agents. Different SLMs have different pretrained knowledge, context capacity, reasoning behavior, and sensitivity to noisy or adversarial messages. Because of this, dense communication or a single globally optimized topology can waste context budget and may even damage reasoning quality.
 
-The resulting topology is dynamic, sparse, receiver-personalized, and compatible with local SLM deployment.
+The paper proposes **the first communication-topology protocol for heterogeneous SLM-MASs**. The protocol formalizes how communication structures should be designed when agents are heterogeneous, especially in on-device and privacy-sensitive settings. It is organized around four principles:
 
-## Paper Highlights
+- **Receiver personalization:** each edge should be evaluated by how useful a source message is to a specific receiver.
+- **Complexity adaptiveness:** the topology should adapt to task difficulty, answer divergence, and receiver-side information needs.
+- **On-device deployability:** topology construction should be lightweight, local, low-latency, and compatible with deployed SLMs.
+- **Adversarial robustness:** communication should reduce the influence of low-quality, noisy, or adversarial senders.
 
-- Proposes a heterogeneous SLM-MAS communication topology protocol built around receiver personalization, complexity adaptiveness, on-device deployability, and adversarial robustness.
-- Introduces HARP Score, a hidden-state-aware utility surrogate for estimating whether a source message is useful to a receiver.
-- Evaluates HARP on four medical reasoning benchmarks: MedQA, MedMCQA, PubMedQA, and MMLU-Medical.
-- Tests generalization on five broader reasoning benchmarks: MMLU, GSM8K, MultiArith, SVAMP, and AQuA.
-- Reports improved or maintained accuracy while reducing token usage and latency; in the paper experiments, reductions reach up to 17.67% token usage and 35.68% latency per question.
-- Shows strong robustness against adversarial agents, with average relative reductions in attack-induced accuracy drops up to 91.99%.
+This protocol is the conceptual foundation of the work. It explains why heterogeneous SLM-MAS communication should be receiver-specific rather than globally dense.
+
+### 2. The Hidden-State-Aware Receiver-Personalized Pruning framework
+
+Building on the protocol, the paper introduces **Hidden-State-Aware Receiver-Personalized Pruning (HARP)**.
+
+HARP estimates whether a candidate source message is useful for a particular receiver agent by using the receiver model's hidden states. For each receiver, HARP scores candidate incoming messages and keeps only the most useful sources under a communication budget, producing a sparse and query-specific communication graph.
+
+In short, HARP turns the question:
+
+> Who should listen to whom?
+
+into a receiver-personalized pruning decision based on hidden-state evidence.
+
+## Repository Scope
+
+This repository is primarily focused on the **HARP framework**, including:
+
+- training a lightweight HARP scorer from receiver-side hidden states;
+- running receiver-personalized source selection for heterogeneous SLM agents;
+- organizing filtered benchmark samples used in the experiments;
+- providing paper figures and supplementary materials.
+
+The communication-topology protocol is described in the paper and reflected in the design of HARP. The main executable code in this repository is the HARP implementation.
+
+## How HARP Works
+
+For a task query and a set of heterogeneous SLM agents, HARP follows this pipeline:
+
+1. Candidate agents generate initial reasoning messages.
+2. A receiver agent reads each candidate message.
+3. The receiver's hidden states over the message span are extracted.
+4. A lightweight HARP scorer predicts the receiver-personalized utility of the candidate edge.
+5. For each receiver, HARP keeps the Top-K incoming sources.
+6. The selected edges form a sparse receiver-personalized communication topology.
+
+This makes communication dynamic, local, and budget-aware while reducing redundant or harmful information flow.
 
 ## Repository Structure
 
@@ -33,11 +63,11 @@ The resulting topology is dynamic, sparse, receiver-personalized, and compatible
 .
 |-- assets/figures/                   # Paper figures
 |-- data/
-|   |-- benchmarks/                   # Filtered benchmark samples used for evaluation
-|   `-- motivation/                   # Diagnostic data for HARP hidden-state separability
+|   |-- benchmarks/                   # Filtered benchmark samples
+|   `-- motivation/                   # Hidden-state separability diagnostic data
 |-- scripts/
-|   |-- train_harp_scorer.py          # Train the hidden-state HARP scorer
-|   `-- run_medical_harp_selection.py # Run receiver-personalized HARP ranking on medical tasks
+|   |-- train_harp_scorer.py          # Train the HARP hidden-state scorer
+|   `-- run_medical_harp_selection.py # Run HARP receiver-personalized ranking
 |-- supplementary/                    # Supplementary material archive
 |-- requirements.txt
 `-- README.md
@@ -79,7 +109,7 @@ python scripts/train_harp_scorer.py \
 
 The training script supports selecting all hidden layers, the last layer, or front/middle/back layer groups through `--use_layers` and `--use_part`.
 
-## Run Medical HARP Selection
+## Run HARP Selection on Medical Reasoning
 
 The medical ranking script expects:
 
@@ -128,6 +158,10 @@ The included filtered samples cover:
 - General reasoning: MMLU, GSM8K, MultiArith, SVAMP, AQuA.
 
 These files are intended to make the evaluation protocol transparent. For full benchmark usage, please follow the licenses and terms of the original datasets.
+
+## Main Experimental Findings
+
+Across the paper experiments, HARP improves or maintains reasoning accuracy while reducing communication overhead. The reported reductions reach up to **17.67%** token usage and **35.68%** latency per question. HARP also improves robustness against adversarial agents, with average relative reductions in attack-induced accuracy drops reaching **91.99%**.
 
 ## Citation
 
