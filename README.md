@@ -4,26 +4,35 @@ Code and resources for **Who Should Listen to Whom? Receiver-Personalized Commun
 
 Paper: [OpenReview](https://openreview.net/forum?id=2bxMTM1TM7)
 
-This repository mainly contains the implementation and experimental materials for the **Hidden-State-Aware Receiver-Personalized Pruning (HARP) framework**. The paper makes two central contributions: a communication-topology protocol for heterogeneous SLM-MASs, and HARP as a practical hidden-state-aware pruning framework built under that protocol.
+## Why Now: Personal AI PCs Need Smarter Agent Communication
 
-## Two Main Contributions
+<p>
+  <img src="https://img.shields.io/badge/NVIDIA-Personal%20AI%20PC-76B900?logo=nvidia&logoColor=white" alt="NVIDIA Personal AI PC" />
+  <a href="https://nvidianews.nvidia.com/news/nvidia-microsoft-windows-pcs-agents-rtx-spark">NVIDIA</a> and <a href="https://blogs.windows.com/windowsexperience/2026/05/31/introducing-a-powerful-new-chapter-for-windows-pcs-accelerated-by-nvidia-rtx-spark/">Microsoft</a> are pushing Windows PCs toward local personal AI agents. HARP addresses the communication layer such systems will need: selective, receiver-personalized, low-latency collaboration among heterogeneous on-device SLM agents.
+</p>
+
+Recent personal AI PC announcements make the hardware direction clear: agents are moving closer to the user's device, private data, and interactive workflows. Once multiple small agents can run locally, the next bottleneck is no longer only whether the models fit on the machine. It is **who should listen to whom**: which messages deserve context budget, which sources are useful for each receiver, and how the system avoids redundant, noisy, or adversarial communication.
+
+HARP is built for that missing layer. Instead of assuming that more communication is always better, it uses receiver-side hidden-state evidence to help each heterogeneous SLM agent keep only the incoming sources that are useful for itself under an on-device budget.
+
+> HARP is an independent academic project inspired by public NVIDIA/Microsoft personal AI PC announcements; it is not affiliated with, sponsored by, or endorsed by NVIDIA.
+
+This repository mainly contains the implementation and experimental materials for the **Hidden-State-Aware Receiver-Personalized Pruning (HARP) framework**. The paper introduces the first communication-topology protocol for heterogeneous SLM-MASs and HARP as a practical hidden-state-aware pruning framework built under that protocol.
+
+## What HARP Contributes
 
 ### 1. The first communication-topology protocol for heterogeneous SLM-MASs
 
-Heterogeneous small-language-model multi-agent systems (SLM-MASs) are not made of interchangeable agents. Different SLMs have different pretrained knowledge, context capacity, reasoning behavior, and sensitivity to noisy or adversarial messages. Because of this, dense communication or a single globally optimized topology can waste context budget and may even damage reasoning quality.
-
-The paper proposes **the first communication-topology protocol for heterogeneous SLM-MASs**. The protocol formalizes how communication structures should be designed when agents are heterogeneous, especially in on-device and privacy-sensitive settings. It is organized around four principles:
+Heterogeneous small-language-model multi-agent systems (SLM-MASs) are not made of interchangeable agents. Different SLMs have different pretrained knowledge, context capacity, reasoning behavior, and sensitivity to noisy or adversarial messages. HARP formalizes this as a communication-topology problem and organizes the design around four principles:
 
 - **Receiver personalization:** each edge should be evaluated by how useful a source message is to a specific receiver.
 - **Complexity adaptiveness:** the topology should adapt to task difficulty, answer divergence, and receiver-side information needs.
 - **On-device deployability:** topology construction should be lightweight, local, low-latency, and compatible with deployed SLMs.
 - **Adversarial robustness:** communication should reduce the influence of low-quality, noisy, or adversarial senders.
 
-This protocol is the conceptual foundation of the work. It explains why heterogeneous SLM-MAS communication should be receiver-specific rather than globally dense.
+This protocol explains why local agent societies need receiver-specific communication rather than globally dense message passing.
 
-### 2. The Hidden-State-Aware Receiver-Personalized Pruning framework
-
-Building on the protocol, the paper introduces **Hidden-State-Aware Receiver-Personalized Pruning (HARP)**.
+### 2. A hidden-state-aware HARP Score
 
 HARP estimates whether a candidate source message is useful for a particular receiver agent by using the receiver model's hidden states. For each receiver, HARP scores candidate incoming messages and keeps only the most useful sources under a communication budget, producing a sparse and query-specific communication graph.
 
@@ -32,6 +41,10 @@ In short, HARP turns the question:
 > Who should listen to whom?
 
 into a receiver-personalized pruning decision based on hidden-state evidence.
+
+### 3. Efficiency and robustness for on-device collaboration
+
+Across the paper experiments, HARP improves or maintains reasoning accuracy while reducing communication overhead. The reported reductions reach up to **17.67%** token usage and **35.68%** latency per question. HARP also improves robustness against adversarial agents, with average relative reductions in attack-induced accuracy drops reaching **91.99%**.
 
 ## Repository Scope
 
