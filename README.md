@@ -65,10 +65,17 @@ This makes communication dynamic, local, and budget-aware while reducing redunda
 |-- data/
 |   |-- benchmarks/                   # Filtered benchmark samples
 |   `-- motivation/                   # Hidden-state separability diagnostic data
+|-- docs/                             # Artifact contracts
+|-- harp/                             # HARP scorer modules
 |-- scripts/
 |   |-- train_harp_scorer.py          # Train the HARP hidden-state scorer
-|   `-- run_medical_harp_selection.py # Run HARP receiver-personalized ranking
+|   |-- run_medical_harp_selection.py # Run HARP receiver-personalized ranking
+|   |-- extract_harp_hidden_features.py
+|   |-- train_harp_scorer_from_features.py
+|   |-- score_harp_edge.py
+|   `-- rank_harp_edges.py
 |-- supplementary/                    # Supplementary material archive
+|-- tests/                            # Minimal scorer checks
 |-- requirements.txt
 `-- README.md
 ```
@@ -109,6 +116,16 @@ python scripts/train_harp_scorer.py \
 
 The training script supports selecting all hidden layers, the last layer, or front/middle/back layer groups through `--use_layers` and `--use_part`.
 
+## HARP Scorer Utilities
+
+HARP scorer utilities expose receiver-conditioned message utility estimation from hidden-state evidence. The score is reported as `P(useful)` and can be used to rank candidate incoming messages under a communication budget.
+
+```text
+harp_score: 0.539
+score_definition: P(useful)
+decision: useful
+```
+
 ## Run HARP Selection on Medical Reasoning
 
 The medical ranking script expects:
@@ -127,9 +144,9 @@ models/
 `-- Qwen3-8B/
 
 checkpoints/harp_score_modules/
-|-- A2/best_deeptextcnn.pt
-|-- A3/best_deeptextcnn.pt
-`-- S/best_deeptextcnn.pt
+|-- A2/best_harp_s_cnn.pt
+|-- A3/best_harp_s_cnn.pt
+`-- S/best_harp_s_cnn.pt
 ```
 
 Run:

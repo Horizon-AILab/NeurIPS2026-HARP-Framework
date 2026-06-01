@@ -7,6 +7,7 @@ import os
 import random
 import re
 import statistics
+import sys
 import threading
 import time
 from datetime import datetime
@@ -20,6 +21,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from harp import LEGACY_SCORER_FILENAME, SCORER_FILENAME, load_harp_scorer, normalize_hidden, score_useful
 
 DATA_DIR = Path(os.getenv("HARP_DATA_DIR", str(REPO_ROOT / "data" / "benchmarks")))
 OUTPUT_ROOT = Path(os.getenv("HARP_OUTPUT_ROOT", str(REPO_ROOT / "outputs" / "medical_harp_selection")))
@@ -534,38 +539,6 @@ Rationale: {source_rationale or 'No rationale parsed.'}"""
     return user_text.strip(), assistant_text.strip()
 
 
-class DeepTextCNN(nn.Module):
-    def __init__(
-        self,
-        num_layers: int,
-        hidden_dim: int,
-        num_filters: int = 32,
-        kernel_sizes: Tuple[int, ...] = (3, 4, 5),
-        dropout: float = 0.2,
-    ):
-        super().__init__()
-        self.convs = nn.ModuleList(
-            [
-                nn.Conv2d(
-                    in_channels=num_layers,
-                    out_channels=num_filters,
-                    kernel_size=(k, hidden_dim),
-                )
-                for k in kernel_sizes
-            ]
-        )
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(num_filters * len(kernel_sizes), 2)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        pooled = []
-        for conv in self.convs:
-            y = torch.relu(conv(x)).squeeze(-1)
-            y = torch.max(y, dim=-1).values
-            pooled.append(y)
-        return self.fc(self.dropout(torch.cat(pooled, dim=1)))
-
-
 def apply_harp_chat_template(
     tokenizer: AutoTokenizer,
     messages: List[Dict[str, str]],
@@ -603,12 +576,13 @@ class HARPScoreManager:
             scorer_dir = Path(cfg["scorer_dir"])
             required = [
                 model_dir / "config.json",
-                scorer_dir / "best_deeptextcnn.pt",
                 scorer_dir / "scorer_metadata.json",
             ]
             for path in required:
                 if not path.exists():
                     raise FileNotFoundError(f"Missing HARP asset for {target_role}: {path}")
+            if not (scorer_dir / SCORER_FILENAME).exists() and not (scorer_dir / LEGACY_SCORER_FILENAME).exists():
+                raise FileNotFoundError(f"Missing HARP asset for {target_role}: {scorer_dir / SCORER_FILENAME}")
 
     def close(self) -> None:
         with self.lock:
@@ -695,18 +669,7 @@ class HARPScoreManager:
         if target_role in self.scorers:
             return self.scorers[target_role], self.scorer_metadata[target_role]
         scorer_dir = Path(HARP_TARGET_CONFIG[target_role]["scorer_dir"])
-        metadata = json.loads((scorer_dir / "scorer_metadata.json").read_text(encoding="utf-8"))
-        checkpoint = torch.load(scorer_dir / "best_deeptextcnn.pt", map_location="cpu", weights_only=False)
-        model = DeepTextCNN(
-            num_layers=int(metadata["num_layers"]),
-            hidden_dim=int(metadata["hidden_dim"]),
-            num_filters=int(metadata.get("num_filters", 32)),
-            kernel_sizes=tuple(int(x) for x in metadata.get("kernel_sizes", [3, 4, 5])),
-            dropout=float(metadata.get("dropout", 0.2)),
-        )
-        model.load_state_dict(checkpoint["model_state_dict"])
-        model.to(self.scorer_device)
-        model.eval()
+        model, metadata = load_harp_scorer(scorer_dir, self.scorer_device)
         self.scorers[target_role] = model
         self.scorer_metadata[target_role] = metadata
         return model, metadata
@@ -774,13 +737,7 @@ class HARPScoreManager:
 
     @staticmethod
     def _prepare_scorer_input(hidden: torch.Tensor, max_len: int) -> torch.Tensor:
-        layers, seq_len, hidden_dim = hidden.shape
-        if seq_len >= max_len:
-            hidden = hidden[:, :max_len, :]
-        else:
-            pad = torch.zeros((layers, max_len - seq_len, hidden_dim), dtype=hidden.dtype)
-            hidden = torch.cat([hidden, pad], dim=1)
-        return hidden.unsqueeze(0)
+        return normalize_hidden(hidden, max_len).unsqueeze(0)
 
     def score_edge(
         self,
@@ -814,7 +771,7 @@ class HARPScoreManager:
                 with torch.inference_mode():
                     with torch.autocast(device_type=self.scorer_device.type, enabled=self.scorer_device.type == "cuda"):
                         logits = scorer(x)
-                    prob = torch.softmax(logits.float(), dim=-1)[0, 1].detach().cpu().item()
+                    prob = score_useful(logits)[0].detach().cpu().item()
                 latency = time.perf_counter() - t0
                 del hidden, x
                 if torch.cuda.is_available():
@@ -829,8 +786,8 @@ class HARPScoreManager:
                     "target_role": target_role,
                     "target_model": HARP_TARGET_CONFIG[target_role]["target_model"],
                     "score_method": "HARP_Score",
-                    "harp_score_model_type": scorer_meta.get("scorer_type", "DeepTextCNN"),
-                    "harp_score_checkpoint_path": str(Path(HARP_TARGET_CONFIG[target_role]["scorer_dir"]) / "best_deeptextcnn.pt"),
+                    "harp_score_model_type": scorer_meta.get("architecture", scorer_meta.get("scorer_type", "HARP_S_CNN")),
+                    "harp_score_checkpoint_path": scorer_meta.get("checkpoint_path", str(Path(HARP_TARGET_CONFIG[target_role]["scorer_dir"]) / SCORER_FILENAME)),
                     "local_latency_sec": latency,
                     **hidden_meta,
                 }
@@ -845,8 +802,8 @@ class HARPScoreManager:
                     "target_role": target_role,
                     "target_model": HARP_TARGET_CONFIG[target_role]["target_model"],
                     "score_method": "HARP_Score",
-                    "harp_score_model_type": "DeepTextCNN",
-                    "harp_score_checkpoint_path": str(Path(HARP_TARGET_CONFIG[target_role]["scorer_dir"]) / "best_deeptextcnn.pt"),
+                    "harp_score_model_type": "HARP_S_CNN",
+                    "harp_score_checkpoint_path": str(Path(HARP_TARGET_CONFIG[target_role]["scorer_dir"]) / SCORER_FILENAME),
                     "local_latency_sec": time.perf_counter() - t0,
                 }
 
@@ -928,9 +885,9 @@ def make_harp_info(
         "harp_score_values": scored_edges,
         "ranked_score_values": ranked_score_values,
         "score_method": "HARP_Score",
-        "harp_score_model_type": "DeepTextCNN",
+        "harp_score_model_type": "HARP_S_CNN",
         "harp_score_checkpoint_paths": {
-            role: str(Path(cfg["scorer_dir"]) / "best_deeptextcnn.pt")
+            role: str(Path(cfg["scorer_dir"]) / SCORER_FILENAME)
             for role, cfg in HARP_TARGET_CONFIG.items()
         },
         "hidden_model_paths": {
@@ -1442,7 +1399,7 @@ def main() -> None:
         config_rows.append({"key": f"model_{model_cfg['role']}", "value": model_cfg["model"]})
     for target_role, cfg in HARP_TARGET_CONFIG.items():
         config_rows.append({"key": f"harp_target_model_{target_role}", "value": str(cfg["model_dir"])})
-        config_rows.append({"key": f"harp_score_checkpoint_{target_role}", "value": str(Path(cfg["scorer_dir"]) / "best_deeptextcnn.pt")})
+        config_rows.append({"key": f"harp_score_checkpoint_{target_role}", "value": str(Path(cfg["scorer_dir"]) / SCORER_FILENAME)})
     write_excel(output_xlsx, details_df, summary_main, summary_long, errors_df, config_rows)
     HARP_SCORE_MANAGER.close()
     log("=" * 80)

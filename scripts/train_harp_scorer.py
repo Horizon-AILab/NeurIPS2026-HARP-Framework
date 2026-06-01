@@ -2,69 +2,22 @@
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-class HARP_S_CNN(nn.Module):
-
-    def __init__(
-        self,
-        embedding_dim: int,
-        num_classes: int,
-        num_layers: int,
-        kernel_sizes: Tuple[int, int, int] = (3, 4, 5),
-        num_filters: int = 256,
-        dropout: float = 0.5,
-    ) -> None:
-        super().__init__()
-        self.kernel_sizes = kernel_sizes
-        self.convs = nn.ModuleList(
-            [
-                nn.Conv2d(
-                    in_channels=num_layers,
-                    out_channels=num_filters,
-                    kernel_size=(k, embedding_dim),
-                )
-                for k in kernel_sizes
-            ]
-        )
-        self.deep_convs = nn.ModuleList(
-            [nn.Conv1d(num_filters, num_filters, kernel_size=3, padding=1) for _ in range(2)]
-        )
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Sequential(
-            nn.Linear(len(kernel_sizes) * num_filters, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(512, num_classes),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        conv_outputs: List[torch.Tensor] = []
-        for conv, k in zip(self.convs, self.kernel_sizes):
-            seq_len = x.size(2)
-            if seq_len < k:
-                pad_amt = k - seq_len
-                x_padded = F.pad(x, (0, 0, 0, pad_amt))
-                out = F.relu(conv(x_padded)).squeeze(3)
-            else:
-                out = F.relu(conv(x)).squeeze(3)
-            for deep_conv in self.deep_convs:
-                out = F.relu(deep_conv(out))
-            pooled = F.adaptive_max_pool1d(out, 1).squeeze(2)
-            conv_outputs.append(pooled)
-        features = torch.cat(conv_outputs, dim=1)
-        features = self.dropout(features)
-        return self.fc(features)
+from harp import HARP_S_CNN, normalize_hidden, save_harp_checkpoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,6 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grad_accum_steps", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--save_every_steps", type=int, default=15000)
+    parser.add_argument("--max_len", type=int, default=96)
     parser.add_argument(
         "--output_dir",
         type=str,
@@ -206,6 +160,36 @@ def save_checkpoint(model: nn.Module, loss_hist: List[float], step: int, cfg: ar
     plt.close()
 
 
+def build_metadata(
+    cfg: argparse.Namespace,
+    backbone: nn.Module,
+    num_layers_selected: int,
+    step_counter: int,
+    avg_loss: float,
+) -> dict:
+    return {
+        "architecture": "HARP_S_CNN",
+        "receiver_model": cfg.model_path,
+        "hidden_dim": int(backbone.config.hidden_size),
+        "num_layers": int(num_layers_selected),
+        "max_len": int(cfg.max_len),
+        "num_classes": 2,
+        "num_labels": 2,
+        "kernel_sizes": [3, 4, 5],
+        "num_filters": 256,
+        "dropout": 0.5,
+        "deep_conv_layers": 2,
+        "fc_hidden_dim": 512,
+        "positive_class": "useful",
+        "score_definition": "P(useful)",
+        "use_layers": cfg.use_layers,
+        "use_part": cfg.use_part,
+        "backbone": cfg.backbone,
+        "steps": int(step_counter),
+        "train_avg_loss": float(avg_loss),
+    }
+
+
 def build_prompts(question: str, answer: str, backbone: str):
     if backbone == "chat_template":
         user_only = [{"role": "user", "content": question}]
@@ -286,7 +270,7 @@ def train(cfg: argparse.Namespace) -> None:
             outputs = backbone(inputs["input_ids"], output_hidden_states=True)
         hidden = torch.stack(outputs.hidden_states, dim=0).squeeze(1)
         hidden = hidden[:, start_idx:]
-        hidden = select_hidden_states(hidden, cfg, total_layers).to(device_cnn)
+        hidden = normalize_hidden(select_hidden_states(hidden, cfg, total_layers), cfg.max_len).to(device_cnn)
         hidden = hidden.unsqueeze(0)
         labels = torch.tensor([label], device=device_cnn)
 
@@ -328,6 +312,11 @@ def train(cfg: argparse.Namespace) -> None:
     final_ckpt = output_dir / f"harp_s_final_{cfg.use_part}.pth"
     torch.save(classifier.state_dict(), final_ckpt)
     print(f"Saved final model to {final_ckpt}")
+    metadata = build_metadata(cfg, backbone, num_layers_selected, step_counter, avg_loss)
+    best_ckpt = save_harp_checkpoint(classifier, output_dir, metadata)
+    print(f"Saved HARP_S_CNN checkpoint to {best_ckpt}")
+    metrics = {"train_avg_loss": float(avg_loss), "steps": int(step_counter)}
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
 
     (output_dir / f"loss_history_final_{cfg.use_part}.txt").write_text("\n".join(str(l) for l in loss_hist))
     plt.figure()

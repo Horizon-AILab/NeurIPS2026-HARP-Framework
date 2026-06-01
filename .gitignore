@@ -4,8 +4,10 @@ __pycache__/
 venv/
 
 # Local model weights and checkpoints
-models/
-checkpoints/
+models/*
+!models/README.md
+checkpoints/*
+!checkpoints/README.md
 outputs/
 *.pt
 *.pth
