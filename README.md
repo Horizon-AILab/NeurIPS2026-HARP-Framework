@@ -4,6 +4,18 @@ Code and resources for **Who Should Listen to Whom? Receiver-Personalized Commun
 
 Paper: [OpenReview](https://openreview.net/forum?id=2bxMTM1TM7)
 
+## Demo
+
+<p align="center">
+  <a href="assets/demo/harp-demo.mp4">
+    <img src="assets/demo/harp-demo-cover.png" alt="HARP framework demo video" width="720" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="assets/demo/harp-demo.mp4">Watch the demo video</a>
+</p>
+
 ## Why Now: Personal AI PCs Need Smarter Agent Communication
 
 <p>
