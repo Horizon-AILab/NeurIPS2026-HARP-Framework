@@ -4,18 +4,6 @@ Code and resources for **Who Should Listen to Whom? Receiver-Personalized Commun
 
 Paper: [OpenReview](https://openreview.net/forum?id=2bxMTM1TM7)
 
-## Demo
-
-<p align="center">
-  <a href="assets/demo/harp-demo.mp4">
-    <img src="assets/demo/harp-demo-cover.png" alt="HARP framework demo video" width="720" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="assets/demo/harp-demo.mp4">Watch the demo video</a>
-</p>
-
 ## Why Now: Personal AI PCs Need Smarter Agent Communication
 
 <p>
@@ -204,6 +192,18 @@ These files are intended to make the evaluation protocol transparent. For full b
 ## Main Experimental Findings
 
 Across the paper experiments, HARP improves or maintains reasoning accuracy while reducing communication overhead. The reported reductions reach up to **17.67%** token usage and **35.68%** latency per question. HARP also improves robustness against adversarial agents, with average relative reductions in attack-induced accuracy drops reaching **91.99%**.
+
+## Demo
+
+<p align="center">
+  <a href="assets/demo/harp-demo.mp4">
+    <img src="assets/demo/harp-demo-cover.png" alt="HARP framework demo video" width="720" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="assets/demo/harp-demo.mp4">Watch the demo video</a>
+</p>
 
 ## Citation
 
